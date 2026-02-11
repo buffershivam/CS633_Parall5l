@@ -27,7 +27,7 @@ int main(int argc, char *argv[]) {
     int T = atoi(argv[4]);
     int seed = atoi(argv[5]);
 
-    if (D1 >= D2)
+    if (D1 >= D2 || D1 <= 0)
     {
         printf("Usage: D1 < D2 \n");
         MPI_Finalize();
@@ -63,43 +63,59 @@ int main(int argc, char *argv[]) {
     for (int j=0; j<T; j++)
     {
 
-        if (r1 < P)// Sender rank
+        if (r1 < P)// Sender rank sends
         {
-            MPI_Send(buffer_updated_for_D1, M, MPI_DOUBLE, r1, TAG_D1, MPI_COMM_WORLD);
-
-            for (int i = 0; i<M; i++)
-                buffer_updated_for_D1[i] = (unsigned long long) data_received[i] % 100000;
-
-            MPI_Recv(data_received, M, MPI_DOUBLE, r1, TAG_D1, MPI_COMM_WORLD, &status);
+            MPI_Send(data_received, M, MPI_DOUBLE, r1, TAG_D1, MPI_COMM_WORLD); // send to receiver at r1
         }
-        if (r2 < P)// Sender rank
+        
+        if (r2 < P)// Sender rank sends
         {
-            MPI_Send(buffer_updated_for_D2, M, MPI_DOUBLE, r2, TAG_D2, MPI_COMM_WORLD);
-
-            for (int i = 0; i<M; i++)
-                buffer_updated_for_D2[i] = data_received[i] * 100000;
-
-            MPI_Recv(data_received, M, MPI_DOUBLE, r2, TAG_D2, MPI_COMM_WORLD, &status);
+            MPI_Send(data_received, M, MPI_DOUBLE, r2, TAG_D2, MPI_COMM_WORLD); // send to receiver at r2
         }
-        if (l1 >= 0)// Receiver rank
+
+
+        if (l1 >= 0)// Receiver rank receives and sends back
         {
-            MPI_Recv(data_received, M, MPI_DOUBLE, l1, TAG_D1, MPI_COMM_WORLD, &status);
+            MPI_Recv(data_received, M, MPI_DOUBLE, l1, TAG_D1, MPI_COMM_WORLD, &status); // receive from sender at l1
 
             for (int i=0; i<M; i++)
                 data_at_D1[i] = data_received[i] * data_received[i];
 
-            MPI_Send(data_at_D1, M, MPI_DOUBLE, l1, TAG_D1, MPI_COMM_WORLD);
+            MPI_Send(data_at_D1, M, MPI_DOUBLE, l1, TAG_D1, MPI_COMM_WORLD); // send back to sender at l1
             
         } 
         
-        if (l2 >= 0)// Receiver rank
+        if (l2 >= 0)// Receiver rank receives and sends back
         {
-            MPI_Recv(data_received, M, MPI_DOUBLE, l2, TAG_D2, MPI_COMM_WORLD, &status);
+            MPI_Recv(data_received, M, MPI_DOUBLE, l2, TAG_D2, MPI_COMM_WORLD, &status); // receive from sender at l2
 
             for (int i=0; i<M; i++)
                 data_at_D2[i] = log(data_received[i]);
 
-            MPI_Send(data_at_D2, M, MPI_DOUBLE, l2, TAG_D2, MPI_COMM_WORLD);
+            MPI_Send(data_at_D2, M, MPI_DOUBLE, l2, TAG_D2, MPI_COMM_WORLD); // send back to sender at l2
+        }
+
+
+        if(r1 < P) // sender rank receives back and updates into buffer
+        {
+            MPI_Recv(data_received, M, MPI_DOUBLE, r1, TAG_D1, MPI_COMM_WORLD, &status); // receive from receiver at r1
+            
+            for (int i = 0; i<M; i++) // compute buffer to update data_received before next iteration
+                buffer_updated_for_D1[i] = (unsigned long long) data_received[i] % 100000;
+
+            for(int i = 0; i<M; i++) // update data_received using buffer
+                data_received[i] = buffer_updated_for_D1[i];
+        }
+
+        if(r2 < P) // sender rank receives back and updates into buffer
+        {
+            MPI_Recv(data_received, M, MPI_DOUBLE, r2, TAG_D2, MPI_COMM_WORLD, &status); // receive from receiver at r2
+
+            for (int i = 0; i<M; i++) // compute buffer to update data_received before next iteration
+                buffer_updated_for_D2[i] = data_received[i] * 100000;
+            
+            for(int i = 0; i<M; i++) // update data_received using buffer
+                data_received[i] = buffer_updated_for_D2[i];
         }
 
         
@@ -114,9 +130,18 @@ int main(int argc, char *argv[]) {
         if(data_at_D2[i] > max_D2) max_D2 = data_at_D2[i];
     }
     
-    if (rank == 0)
+
+    if(r1 < P || r2 < P)// only valid senders send the max D1/D2 data to rank 0 
     {
-        for(int i = 1; i < P; i++)
+        printf("Sending max D1,D2 from %d \n",rank);
+        MPI_Send(&max_D1, 1, MPI_DOUBLE, 0, TAG_MD1, MPI_COMM_WORLD);
+        MPI_Send(&max_D2, 1, MPI_DOUBLE, 0, TAG_MD2, MPI_COMM_WORLD);
+    }
+
+    if (rank == 0)// calculates global maximum D1/D2 for all the max D1/D2 received from valid senders
+    {
+        int i = 0;
+        while((i+D1 < P) || (i+D2 < P))
         {
             double max_D1_it,max_D2_it;
             MPI_Recv(&max_D1_it, 1, MPI_DOUBLE, i, TAG_MD1, MPI_COMM_WORLD, &status);
@@ -124,13 +149,10 @@ int main(int argc, char *argv[]) {
 
             if(max_D1_it > global_max_D1) global_max_D1 = max_D1_it;
             if(max_D2_it > global_max_D2) global_max_D2 = max_D2_it;
+            i++;
         }
     }
-    else
-    {
-        MPI_Send(&max_D1, 1, MPI_DOUBLE, 0, TAG_MD1, MPI_COMM_WORLD);
-        MPI_Send(&max_D2, 1, MPI_DOUBLE, 0, TAG_MD2, MPI_COMM_WORLD);
-    }
+    
     
     
     free(data_received);
