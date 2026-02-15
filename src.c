@@ -115,10 +115,9 @@ int main(int argc, char *argv[])
             // Receive in data_received_D1 itself to avoid usage of an extra buffer
             MPI_Recv(data_received_D1, M, MPI_DOUBLE, r1, TAG_D1_BACK, MPI_COMM_WORLD, &status); // receive from receiver at r1
             
-            if(t<T-1){
+
             for (int i = 0; i<M; i++) // update data_received_D1 before next iteration
                     data_received_D1[i] = (unsigned long long) data_received_D1[i] % 100000;
-            }
 
             if(t==T-1) // calculate maximum from data_received_D1 after final iteration for current rank
             {
@@ -133,10 +132,9 @@ int main(int argc, char *argv[])
             // Receive in data_received_D2 itself to avoid usage of an extra buffer
             MPI_Recv(data_received_D2, M, MPI_DOUBLE, r2, TAG_D2_BACK, MPI_COMM_WORLD, &status); // receive from receiver at r2
 
-            if(t<T-1){
+
             for (int i = 0; i<M; i++) // update data_received_D2 before next iteration
                     data_received_D2[i] = data_received_D2[i] * 100000.0;
-            }
 
             if(t==T-1) // calculate maximum from data_received_D2 after final iteration for current rank
             {
